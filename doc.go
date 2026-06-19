@@ -1,16 +1,19 @@
 /*
-Пакет builder — сборка ресурсов из cfg перед регистрацией в res.
+Package builder materializes config entries from res into runtime resources.
 
-Обходит поля структуры первого уровня; для каждого поля, реализующего Builder,
-вызывает Build() и передаёт результат в Registrar (например, res).
+Configs are registered in res by library use init (AddWithTags) and by
+ecfg.Register from AppConfig. Build walks the registry, calls Build() on
+every entry that implements Builder, registers the result (inheriting entry
+tags), and removes the config entry.
 
-Builder не выполняет DI — связывание зависимостей выполняется позже через sdi.
+Builder does not perform DI — wiring happens later via sdi.
 
-Типичный pipeline:
+Typical pipeline:
 
 	cfg, _ := ecfg.Parse(...)
-	builder.Build(cfg, res)
+	ecfg.Register(cfg, res.Default)
+	builder.Build(res.Default)
 	res.Transform(...)
-	sdi.Resolve(res)
+	sdi.Resolve(res.Default)
 */
 package builder
