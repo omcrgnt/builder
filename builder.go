@@ -2,84 +2,56 @@ package builder
 
 import (
 	"fmt"
-	"reflect"
+
+	"github.com/omcrgnt/res"
 )
 
-// Builder — поле cfg (первого уровня), способное собрать ресурс приложения.
+// Builder is a config spec registered in res before materialization.
 type Builder interface {
 	Build() (any, error)
 }
 
-// Registrar принимает готовые ресурсы (res реализует через Add / AddAll).
-type Registrar interface {
-	Add(any) error
-}
-
-// Build обходит поля v первого уровня, вызывает Build() у реализующих Builder
-// и регистрирует результат. При первой ошибке возвращает её с именем поля.
-func Build(v any, reg Registrar) error {
+// Build materializes every config entry in reg that implements [Builder]:
+// Build(), register the resource (inheriting entry tags), remove the config.
+// Non-Builder entries are left unchanged.
+func Build(reg res.Registry) error {
 	if reg == nil {
-		return fmt.Errorf("builder: nil registrar")
+		return fmt.Errorf("builder: nil registry")
 	}
 
-	rv, err := structValue(v)
-	if err != nil {
-		return err
+	type job struct {
+		config any
+		tags   []res.Tag
 	}
 
-	rt := rv.Type()
-	for i := 0; i < rv.NumField(); i++ {
-		fieldVal := rv.Field(i)
-		if !fieldVal.CanInterface() {
-			continue
-		}
-		if isNilValue(fieldVal) {
-			continue
-		}
-
-		b, ok := fieldVal.Interface().(Builder)
+	var jobs []job
+	reg.WalkEntries(func(e res.Entry) bool {
+		b, ok := e.Value.(Builder)
 		if !ok {
-			continue
+			return true
 		}
+		jobs = append(jobs, job{config: b, tags: e.Tags()})
+		return true
+	})
 
-		res, err := b.Build()
+	for _, j := range jobs {
+		built, err := j.config.(Builder).Build()
 		if err != nil {
-			return fmt.Errorf("builder: %s: %w", rt.Field(i).Name, err)
+			return fmt.Errorf("builder: %T: %w", j.config, err)
 		}
 
-		if err := reg.Add(res); err != nil {
-			return fmt.Errorf("builder: %s: %w", rt.Field(i).Name, err)
+		if len(j.tags) > 0 {
+			if err := reg.AddWithTags(built, j.tags...); err != nil {
+				return fmt.Errorf("builder: %T: %w", j.config, err)
+			}
+		} else if err := reg.Add(built); err != nil {
+			return fmt.Errorf("builder: %T: %w", j.config, err)
+		}
+
+		if err := reg.Remove(j.config); err != nil {
+			return fmt.Errorf("builder: %T: remove config: %w", j.config, err)
 		}
 	}
 
 	return nil
-}
-
-func structValue(v any) (reflect.Value, error) {
-	if v == nil {
-		return reflect.Value{}, fmt.Errorf("builder: nil config")
-	}
-
-	rv := reflect.ValueOf(v)
-	for rv.Kind() == reflect.Ptr {
-		if rv.IsNil() {
-			return reflect.Value{}, fmt.Errorf("builder: nil config")
-		}
-		rv = rv.Elem()
-	}
-
-	if rv.Kind() != reflect.Struct {
-		return reflect.Value{}, fmt.Errorf("builder: want struct, got %s", rv.Kind())
-	}
-
-	return rv, nil
-}
-
-func isNilValue(v reflect.Value) bool {
-	switch v.Kind() {
-	case reflect.Ptr, reflect.Interface, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func:
-		return v.IsNil()
-	default:
-		return false
-	}
 }
