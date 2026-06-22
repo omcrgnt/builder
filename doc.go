@@ -1,19 +1,13 @@
 /*
-Package builder materializes config entries from res into runtime resources.
+Package builder registers and materializes config specs in [res.Registry].
 
-Configs are registered in res by library use init (AddWithTags) and by
-ecfg.Register from AppConfig. Build walks the registry, calls Build() on
-every entry that implements Builder, registers the result (inheriting entry
-tags), and removes the config entry.
+AppResources pipeline:
 
-Builder does not perform DI — wiring happens later via sdi.
+	builder.Seed(reg, &appResources)  // BuildConfiger → spec; NewResourceer → deferred build
+	ecfg.Apply(reg, &appResources, …) // env into specs
+	builder.Build(reg)                // Spec.Build() / NewResource() → resources
 
-Typical pipeline:
-
-	cfg, _ := ecfg.Parse(...)
-	ecfg.Register(cfg, res.Default)
-	builder.Build(res.Default)
-	res.Transform(...)
-	sdi.Resolve(res.Default)
+Library use init may still [res.AddWithTags] replaceable defaults.
+Builder does not perform DI — wiring happens later via [sdi.Resolve].
 */
 package builder
