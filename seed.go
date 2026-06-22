@@ -5,8 +5,6 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-
-	"github.com/omcrgnt/res"
 )
 
 // SeedMap maps first-level AppResources field name to config spec in reg.
@@ -25,7 +23,7 @@ func (s newResourceSpec) Build() (any, error) {
 
 // Seed walks first-level fields of appResources and registers build specs only.
 // [BuildConfiger] → spec from [BuildConfiger.BuildConfig]; [NewResourceer] → [newResourceSpec].
-func Seed(reg res.Registry, appResources any) error {
+func Seed(reg Registry, appResources any) error {
 	if reg == nil {
 		return fmt.Errorf("builder: nil registry")
 	}
@@ -79,7 +77,7 @@ func Seed(reg res.Registry, appResources any) error {
 }
 
 // SeedMapFor returns the map populated by [Seed] for reg.
-func SeedMapFor(reg res.Registry) (SeedMap, bool) {
+func SeedMapFor(reg Registry) (SeedMap, bool) {
 	v, ok := seedMaps.Load(reg)
 	if !ok {
 		return nil, false
