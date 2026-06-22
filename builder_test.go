@@ -4,6 +4,8 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/omcrgnt/res"
 )
 
 type okConfig struct{}
@@ -23,7 +25,7 @@ type ptrConfig struct{}
 func (c *ptrConfig) Build() (any, error) { return c, nil }
 
 func TestBuild_success(t *testing.T) {
-	reg := newTestRegistry()
+	reg := res.New()
 	_ = reg.Add(okConfig{})
 	_ = reg.Add(anotherConfig{})
 
@@ -31,28 +33,50 @@ func TestBuild_success(t *testing.T) {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	values := reg.values()
+	var values []any
+	reg.WalkEntries(func(e res.Entry) bool {
+		values = append(values, e.Value)
+		return true
+	})
 	if len(values) != 2 {
 		t.Fatalf("expected 2 resources, got %d: %v", len(values), values)
 	}
 }
 
-func TestBuild_inheritsTags(t *testing.T) {
-	reg := newTestRegistry()
-	_ = reg.AddWithTags(okConfig{}, "replaceable")
+func TestBuild_inheritsReplaceableTag(t *testing.T) {
+	reg := res.New()
+	_ = reg.AddWithTags(okConfig{}, res.TagReplaceable)
 
 	if err := Build(reg); err != nil {
 		t.Fatal(err)
 	}
 
-	tags := reg.firstTags()
-	if len(tags) != 1 || tags[0] != "replaceable" {
-		t.Fatalf("expected inherited tag, got %v", tags)
+	reg.WalkEntries(func(e res.Entry) bool {
+		if !e.Replaceable() {
+			t.Fatal("expected Replaceable on built resource")
+		}
+		return false
+	})
+}
+
+func TestBuild_inheritsFixedTag(t *testing.T) {
+	reg := res.New()
+	_ = reg.AddWithTags(okConfig{}, res.TagFixed)
+
+	if err := Build(reg); err != nil {
+		t.Fatal(err)
 	}
+
+	reg.WalkEntries(func(e res.Entry) bool {
+		if !e.Fixed() {
+			t.Fatal("expected Fixed on built resource")
+		}
+		return false
+	})
 }
 
 func TestBuild_skipsNonBuilder(t *testing.T) {
-	reg := newTestRegistry()
+	reg := res.New()
 	_ = reg.Add("keep-me")
 	_ = reg.Add(okConfig{})
 
@@ -60,7 +84,11 @@ func TestBuild_skipsNonBuilder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	values := reg.values()
+	var values []any
+	reg.WalkEntries(func(e res.Entry) bool {
+		values = append(values, e.Value)
+		return true
+	})
 	if len(values) != 2 {
 		t.Fatalf("expected kept string + built resource, got %v", values)
 	}
@@ -70,7 +98,7 @@ func TestBuild_skipsNonBuilder(t *testing.T) {
 }
 
 func TestBuild_buildError(t *testing.T) {
-	reg := newTestRegistry()
+	reg := res.New()
 	_ = reg.Add(failConfig{})
 
 	err := Build(reg)
@@ -78,8 +106,13 @@ func TestBuild_buildError(t *testing.T) {
 		t.Fatalf("expected build error, got %v", err)
 	}
 
-	if len(reg.values()) != 1 {
-		t.Fatalf("config should remain on build error, entries=%d", len(reg.values()))
+	n := 0
+	reg.WalkEntries(func(_ res.Entry) bool {
+		n++
+		return true
+	})
+	if n != 1 {
+		t.Fatalf("config should remain on build error, entries=%d", n)
 	}
 }
 
@@ -91,7 +124,7 @@ func TestBuild_nilRegistry(t *testing.T) {
 }
 
 func TestBuild_ptrReceiverConfig(t *testing.T) {
-	reg := newTestRegistry()
+	reg := res.New()
 	cfg := &ptrConfig{}
 	_ = reg.Add(cfg)
 
@@ -99,9 +132,9 @@ func TestBuild_ptrReceiverConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, ok := reg.getOneByType(reflect.TypeOf(cfg))
-	if !ok {
-		t.Fatal("expected built value")
+	got, err := reg.GetOneByType(reflect.TypeOf(cfg))
+	if err != nil {
+		t.Fatal(err)
 	}
 	if got != cfg {
 		t.Fatalf("expected built value %p, got %v", cfg, got)
@@ -109,7 +142,7 @@ func TestBuild_ptrReceiverConfig(t *testing.T) {
 }
 
 func TestBuild_removesConfigEntry(t *testing.T) {
-	reg := newTestRegistry()
+	reg := res.New()
 	cfg := okConfig{}
 	_ = reg.Add(cfg)
 
@@ -117,7 +150,7 @@ func TestBuild_removesConfigEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, ok := reg.getOneByType(reflect.TypeOf(okConfig{})); ok {
+	if _, err := reg.GetOneByType(reflect.TypeOf(okConfig{})); err == nil {
 		t.Fatal("config type should be removed from registry")
 	}
 }

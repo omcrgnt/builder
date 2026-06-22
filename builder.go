@@ -1,27 +1,31 @@
 package builder
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/omcrgnt/res"
+)
 
 // Build materializes every config entry in reg that implements [Builder]:
 // Build(), register the resource (inheriting entry tags), remove the config.
 // Non-Builder entries are left unchanged.
-func Build(reg Registry) error {
+func Build(reg res.Registry) error {
 	if reg == nil {
 		return fmt.Errorf("builder: nil registry")
 	}
 
 	type job struct {
 		config any
-		tags   []any
+		tags   []res.Tag
 	}
 
 	var jobs []job
-	reg.WalkEntries(func(value any, tags []any) bool {
-		b, ok := value.(Builder)
+	reg.WalkEntries(func(e res.Entry) bool {
+		b, ok := e.Value.(Builder)
 		if !ok {
 			return true
 		}
-		jobs = append(jobs, job{config: b, tags: tags})
+		jobs = append(jobs, job{config: b, tags: e.Tags()})
 		return true
 	})
 
